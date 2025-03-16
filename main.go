@@ -13,9 +13,15 @@ func main() {
 
 	router := gin.Default()
 
+	router.GET("/products", service.FindAllProducts)
 	router.GET("/clients", service.GetFindAllClients)
 	router.GET("/clients/:id", service.GetFindClientById)
+	router.GET("/orders/:id", service.GetOrderById)
+
 	router.POST("/clients", service.PostSaveClient)
+	router.POST("/products", service.PostSaveProduct)
+	router.POST("/orders", service.PostCreateOrder)
+
 
 	router.Run("localhost:8080")
 
