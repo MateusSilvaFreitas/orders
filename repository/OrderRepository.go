@@ -26,7 +26,7 @@ func SaveOrder(order model.Order) (int64, error) {
 
 
 func SaveOrderProduct(orderProduct model.OrderProduct) (int64, error){
-	result, err := database.DB.Exec("INSERT INTO order_product(product_id, order_id, quantity, unitary_price, total_price) VALUES(?,?,?,?,?)", orderProduct.OrderID, orderProduct.ProductID, orderProduct.Quantity, orderProduct.UnitaryPrice, orderProduct.TotalPrice)
+	result, err := database.DB.Exec("INSERT INTO order_product(product_id, order_id, quantity, unitary_price, total_price) VALUES(?,?,?,?,?)", orderProduct.ProductID, orderProduct.OrderID, orderProduct.Quantity, orderProduct.UnitaryPrice, orderProduct.TotalPrice)
 
 	if err != nil {
 		return 0, err

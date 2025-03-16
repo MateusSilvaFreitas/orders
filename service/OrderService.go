@@ -9,85 +9,120 @@ import (
 	"github.com/gin-gonic/gin"
 	model "github.com/mateussilvafreitas/orders/models"
 	"github.com/mateussilvafreitas/orders/repository"
+	"github.com/mateussilvafreitas/orders/utils"
 )
+
+
+func fetchProductsConcurrently(productsIds []int64) (map[int64]model.Product, error) {
+	productMap := make(map[int64]model.Product)
+	errChan := make(chan error, len(productsIds))
+	
+	for _, id := range productsIds {
+		go func (pid int64) {
+			product, err := repository.FindProductById(pid)
+			if(err != nil) {
+				errChan <- fmt.Errorf("product %d not found", pid)
+				return
+			}
+
+			productMap[pid] = product
+			errChan <- nil
+		}(id)
+	}
+
+	for range productsIds {
+		if err := <-errChan; err != nil {
+			return nil, err
+		}
+	}
+
+	return productMap, nil
+}
 
 func PostCreateOrder(po *gin.Context) {
 	var createOrder model.CreateOrder
-	var orderResponse model.OrderResponse
 
 	if err := po.BindJSON(&createOrder); err != nil {
+		utils.HandleError(po, 400, "Invalid request", err)
 		return
 	}
 
 	client, err := repository.FindClientById(createOrder.ClientId)
-
 	if err != nil {
-		po.IndentedJSON(422, gin.H{"message": fmt.Sprintf("The passed client does not exists. ID: %d", createOrder.ClientId)})
+		utils.HandleError(po, 404, fmt.Sprintf("The passed client does not exists. ID: %d", createOrder.ClientId), err)
 		return
 	}
-	
-	orderResponse.ClientName = client.Name
 
 
-	var products []model.Product
-	var totalValue = 0.0
-	mapProductQuantity := make(map[int64] int64)
+	var productsIds []int64
+	productQuantities := make(map[int64] int64)
 
-	for _,p := range createOrder.Products {
-		product, err := repository.FindProductById(p.ProductId)
-
-		if err != nil {
-			po.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error creating order, product %d does not exists", p.ProductId)})
-			return
-		}
-
-		products = append(products, product)
-		totalValue += product.Price * float64(p.Quantity)
-		mapProductQuantity[p.ProductId] = p.Quantity
+	for _, p := range createOrder.Products {
+		productsIds = append(productsIds, p.ProductId)
+		productQuantities[p.ProductId] = p.Quantity
 	}
 
-	var order model.Order
-	var date = time.Now()
-	order.Total = math.Round(totalValue * 100) / 100
-	order.ClientID = createOrder.ClientId
-	order.DateOrder = date.Format(time.RFC3339)
+	productMap, err := fetchProductsConcurrently(productsIds)
+
+	if err != nil {
+		utils.HandleError(po, 404, "One or more products not found", err)
+		return
+	}
+
+	var totalValue float64
+	var productsResponse []model.OrderProductResponse
+
+	for _, p := range createOrder.Products {
+		product := productMap[p.ProductId]
+		quantity := productQuantities[p.ProductId]
+		unitTotal := product.Price * float64(quantity)
+
+		totalValue += unitTotal
+
+		productsResponse = append(productsResponse, model.OrderProductResponse{ 
+			Name: product.Name,
+			Quantity: quantity,
+		})
+	}
+
+	order := model.Order{
+		ClientID: client.ID,
+		Total: math.Round(totalValue * 100) / 100,
+		DateOrder: time.Now().Format(time.RFC3339),
+	}
 
 	orderId, err := repository.SaveOrder(order)
 
-	orderResponse.Id = orderId
-	orderResponse.DateOrder = date.Format(time.DateOnly)
-	orderResponse.Total = order.Total
-
 	if err != nil {
-		po.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error creating order: %v", err)})
+		utils.HandleError(po, 500, "Error creating order", err)
 		return
 	}
+	
 
-
-	var productsResponse []model.OrderProductResponse
-	for _, p := range products {
-		var orderProduct model.OrderProduct
-		orderProduct.OrderID = orderId
-		orderProduct.ProductID = p.ID
-		orderProduct.Quantity = mapProductQuantity[p.ID]
-		orderProduct.UnitaryPrice = p.Price
-		orderProduct.TotalPrice = p.Price * float64(orderProduct.Quantity)
-
-		_, err := repository.SaveOrderProduct(orderProduct);
+	for _, p := range createOrder.Products {
+		product := productMap[p.ProductId]
+		_, err := repository.SaveOrderProduct(model.OrderProduct{
+			OrderID: orderId,
+			ProductID: p.ProductId,
+			Quantity: productQuantities[p.ProductId],
+			UnitaryPrice: product.Price,
+			TotalPrice: product.Price * float64(productQuantities[p.ProductId]),
+		})
 
 		if err != nil {
-			po.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error creating the product order: %v", err)})
+			utils.HandleError(po, 500, "Error saving product in order", err)
 			return
 		}
 
-		var orderProductResponse model.OrderProductResponse
-		orderProductResponse.Name = p.Name
-		orderProductResponse.Quantity = orderProduct.Quantity
-
-		productsResponse = append(productsResponse, orderProductResponse)
 	}
 
-	orderResponse.Products = productsResponse
+	orderResponse := model.OrderResponse{
+		Id: orderId,
+		ClientName: client.Name,
+		DateOrder: order.DateOrder,
+		Total: order.Total,
+		Products: productsResponse,
+	}
 
 	po.IndentedJSON(201, orderResponse)
 }
@@ -98,28 +133,28 @@ func GetOrderById(o *gin.Context){
 	idOrder, err := strconv.ParseInt(idOrderStr, 10, 0)
 
 	if err != nil {
-		o.IndentedJSON(400, gin.H{"message": "Invalid id"})
+		utils.HandleError(o, 400, "Invalid id", err)
 		return
 	}
 
 	order, err := repository.FindOrderById(idOrder)
 
 	if err != nil {
-		o.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error finding order by id: %v", err)})
+		utils.HandleError(o, 404, "Error finding order by id", err)
 		return
 	}
 
 	productsOrder, err := repository.FindProductsFromOrder(idOrder)
 
 	if err != nil {
-		o.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error finding order by id: %v", err)})
+		utils.HandleError(o, 500 , "Error finding products from order", err)
 		return
 	}
 
 	client, err := repository.FindClientById(order.ClientID)
 
 	if err != nil {
-		o.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error finding client from order: %v", err)})
+		utils.HandleError(o, 500, "Error finding client from order", err)
 		return
 	}
 
@@ -135,7 +170,7 @@ func GetOrderById(o *gin.Context){
 		product, err := repository.FindProductById(po.ProductID)
 
 		if err != nil {
-			o.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error finding product from order: %v", err)})
+			utils.HandleError(o, 404, "Error finding product from order", err)
 			return
 		}
 

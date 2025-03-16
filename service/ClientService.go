@@ -1,12 +1,12 @@
 package service
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	model "github.com/mateussilvafreitas/orders/models"
 	repository "github.com/mateussilvafreitas/orders/repository"
+	"github.com/mateussilvafreitas/orders/utils"
 )
 
 
@@ -22,7 +22,7 @@ func PostSaveClient(c *gin.Context){
 	id, err := repository.SaveClient(client)
 
 	if err != nil {
-		c.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error saving client:  %v", err)})
+		utils.HandleError(c, 500, "Error saving client", err)
 		return
 	}
 
@@ -34,7 +34,7 @@ func GetFindAllClients(c *gin.Context){
 	clients, err := repository.FindAllClients()
 
 	if err != nil {
-		c.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error finding all clients: %v", err)})
+		utils.HandleError(c, 500, "Error finding all clients", err)
 		return
 	}
 
@@ -47,14 +47,14 @@ func GetFindClientById(c *gin.Context){
 	id, err := strconv.ParseInt(idStr, 10, 0)
 	
 	if(err != nil) {
-		c.IndentedJSON(400, gin.H{"message": "Invalid id"})
+		utils.HandleError(c, 400, "Invalid id", err)
 		return
 	}
 
 	client, err := repository.FindClientById(id)
 
 	if(err != nil) {
-		c.IndentedJSON(404, gin.H{"message": fmt.Sprintf("Error finding client by id: %v", err)})
+		utils.HandleError(c, 404, "Error finding client by id", err)
 		return
 	}
 

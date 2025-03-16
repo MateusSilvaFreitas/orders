@@ -1,11 +1,10 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/gin-gonic/gin"
 	model "github.com/mateussilvafreitas/orders/models"
 	"github.com/mateussilvafreitas/orders/repository"
+	"github.com/mateussilvafreitas/orders/utils"
 )
 
 func PostSaveProduct(c *gin.Context){
@@ -18,7 +17,7 @@ func PostSaveProduct(c *gin.Context){
 	id, err := repository.SaveProduct(product)
 
 	if err != nil {
-		c.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error saving product: %v", err)})
+		utils.HandleError(c, 500, "Error saving product", err)		
 		return
 	}
 
@@ -30,7 +29,7 @@ func FindAllProducts(c *gin.Context) {
 	products, err := repository.FindAllProducts()
 
 	if err != nil {
-		c.IndentedJSON(500, gin.H{"message": fmt.Sprintf("Error finding all products: %v", err)})
+		utils.HandleError(c, 500, "Error finding all products",  err)
 		return
 	}
 
